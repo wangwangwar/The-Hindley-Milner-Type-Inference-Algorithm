@@ -2,24 +2,24 @@
 datatype term = Tyvar of string
               | Tyapp of string * (term list)
 
-(* 
+(*
   *Types*
 
   subs: (term, string) list -> term -> term
 
   *Notes*
 
-  subs: `substitutions`, `termToBeSubstituted`
+  subs `substitutions` `term`
     1. if `term` is a variable, apply the `substitutions` to the term.
     2. if `term` is an empty application, `term` is the result.
     3. if `term` is an application and not empty, map the `substitutions` to
     every expressions of the `term`.
 *)
 fun subs [] term = term
-  | subs ((t1, v1)::ss) (term as Tyvar name) = 
+  | subs ((t1, v1)::ss) (term as Tyvar name) =
   if name = v1 then t1 else subs ss term
   | subs _ (term as Tyapp(name, [])) = term
-  | subs l (Tyapp (name, args)) = 
+  | subs l (Tyapp (name, args)) =
   let fun arglist r [] = rev r
     | arglist r (h::t) =
     arglist ((subs l h)::r) t
@@ -27,24 +27,24 @@ fun subs [] term = term
     Tyapp (name, arglist [] args)
   end
 
-(* 
+(*
   *Types*
 
   compose: (term, string) list -> (term, string) list -> (term, string) list
-    iter: (term, string) list -> (term, string) -> (term, string) list -> (term, string) list 
+    iter: (term, string) list -> (term, string) -> (term, string) list -> (term, string) list
 
   *Notes*
 
-  compose: `substitutions1`, `substitution2`
+  compose `substitutions1` `substitution2`
     use `iter` to apply every substitution of `substitutions1` to `substitution2`
 
-  iter: `resultList`, `aSubstitution`, `listToBeComposed`
+  iter `resultList` `aSubstitution` `listToBeComposed`
     apply `aSubstitution` to `listToBeComposed` and get `resultList`
 *)
 fun compose [] s1 = s1
   | compose (s::ss) s1 =
     let fun iter r s [] = rev r
-      | iter r s ((t1, v1)::ss) = 
+      | iter r s ((t1, v1)::ss) =
         iter (((subs [s] t1), v1)::r) s ss
     in
       compose ss (s::(iter [] s s1))
@@ -72,8 +72,12 @@ exception Unify of string
     the substitution `{t1/v2}`, or empty list `[]`??? (Why not the unchanged `r`?)
     2. `t1` is a variable named `v` and `t2` is an empty application, add the substitution `{t2/v}`.
     3. `t1` is an empty application and `t2` is a variable named `v`, add the substitution `{t1/v}`.
-    4. `t1` is a variable named `v` and `t2` is an nonempty applicaton, if v
-    doesn't occur in t2, add the substitution `{t2/v}`, or error.
+    4. `t1` is a variable named `v` and `t2` is an nonempty applicaton, if `v`
+    doesn't occur in `t2`, add the substitution `{t2/v}`, or error.
+    (If `v` occur in `t2`, for example, `t2`'s type is `alpha -> beta`
+    and `t1`'s type is `alpha`, then we say `{t2/v}` means
+    `alpha == alpha -> beta`. This is false.
+    )
     5. `t1` is an nonempty applicaton and `t2` is a variable named `v`, if v
     doesn't occur in t1, add the substitution `{t1/v}`, or error.
     6. `t1` and `t2` are both applications, if the names are equal and the
@@ -82,7 +86,7 @@ exception Unify of string
 
   occurs: `nameOfTerm`, `term`
     decide whether `nameOfTerm` occurs in `term`
-        
+
   unify_args: `revertedListOfSubstitution`, `termList1`, `termList2`
     unify `termList1` and `termList2`, which separately are two applications' args list.
     1. The length of `termList1` must be the same as `termList2`'s.
@@ -94,7 +98,7 @@ exception Unify of string
 fun unify t1 t2 =
   let fun iter r t1 t2 =
     let fun occurs v (Tyapp (name, [])) = false
-      | occurs v (Tyapp (name, ((Tyvar vn)::t))) = 
+      | occurs v (Tyapp (name, ((Tyvar vn)::t))) =
         if vn = v then true else occurs v (Tyapp (name, t))
       | occurs v (Tyapp (name, (s::t))) =
         occurs v s orelse occurs v (Tyapp (name, t))
@@ -102,14 +106,14 @@ fun unify t1 t2 =
     fun unify_args r [] [] = rev r
       | unify_args r [] _ = raise Unify "Arity"
       | unify_args r _ [] = raise Unify "Arity"
-      | unify_args r (t1::t1s) (t2::t2s) = 
+      | unify_args r (t1::t1s) (t2::t2s) =
         unify_args (compose (iter [] (subs r t1) (subs r t2)) r) t1s t2s
     in
       case (t1, t2) of
            (Tyvar v1, Tyvar v2) => if (v1 = v2) then [] else ((t1, v2)::r)
          | (Tyvar v, Tyapp (_, [])) => ((t2, v)::r)
          | (Tyapp (_, []), Tyvar v) => ((t1, v)::r)
-         | (Tyvar v, Tyapp _) => 
+         | (Tyvar v, Tyapp _) =>
              if occurs v t2 then raise Unify "Occurs" else ((t2, v)::r)
          | (Tyapp _, Tyvar v) =>
              if occurs v t1 then raise Unify "Occurs" else ((t1, v)::r)
@@ -122,7 +126,21 @@ fun unify t1 t2 =
     iter [] t1 t2
   end
 
+(* Utils *)
+fun ppterm (Tyvar name) = name
+  | ppterm (Tyapp(name,[])) = name | ppterm (Tyapp(name,args)) =
+    let fun arglist r [] = r
+      | arglist r (h::t) =
+        arglist (r^(ppterm h)^(if t=[] then "" else ",")) t
+    in
+      name^(arglist "(" args)^")"
+    end
 
+fun ppsubs s =
+  let fun iter r [] = r^"]"
+    | iter r ((term,var)::t) =
+      iter (r^"  "^(ppterm term)^"/"^var^(if t=[] then "\n" else ",\n")) t
+  in print (iter "[\n" s) end
 
 (*
 fun pptsterm tau =
@@ -145,21 +163,6 @@ let fun iter prec (Tyvar name) = ""^name
     iter 10 tau 
   end
 *)
-
-fun ppterm (Tyvar name) = name
-  | ppterm (Tyapp(name,[])) = name | ppterm (Tyapp(name,args)) =
-    let fun arglist r [] = r
-      | arglist r (h::t) =
-        arglist (r^(ppterm h)^(if t=[] then "" else ",")) t 
-    in
-      name^(arglist "(" args)^")"
-    end
-
-fun ppsubs s =
-  let fun iter r [] = r^"]"
-    | iter r ((term,var)::t) =
-      iter (r^(ppterm term)^"/"^var^(if t=[] then "" else ",")) t
-  in iter "[" s end
 
 (*
 fun ppexp e =
